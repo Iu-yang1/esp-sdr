@@ -79,6 +79,10 @@ int main(void) {
         source = (ROOT / "main/targets/esp32s31/burst/receiver.c").read_text()
         self.assertIn('#include "s31_tx_probe.h"', source)
         self.assertIn("s31_tx_probe_command(line)", source)
+        parser = source[source.index("static void command("):source.index("void app_main(")]
+        self.assertNotIn("s31_tx_probe_command(", parser)
+        app = source[source.index("void app_main("):]
+        self.assertIn("!s31_tx_probe_command(line)", app)
         caps = next(line for line in source.splitlines()
                     if 'else if (!strcmp(line, "CAPS"))' in line)
         self.assertIn("TXPROBE", caps)

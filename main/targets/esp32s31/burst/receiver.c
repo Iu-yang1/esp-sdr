@@ -316,7 +316,6 @@ static bool capture_rate(unsigned n, unsigned rate, unsigned format) {
 }
 
 static void command(const char *line) {
-    if (s31_tx_probe_command(line)) return;
     if (burst_version_command(line)) return;
     if (burst_gpio_command(line)) return;
 #ifdef RING_PROBE
@@ -429,7 +428,9 @@ void app_main(void) {
         owner=port;
         if(!strcmp(line,"RELEASE")) {
             reply("OK\n");owner=-1;
-        } else {
+        } else if (!s31_tx_probe_command(line)) {
+            /* Keep passive probes out of the RX parser: host regression tests
+             * compile command() in isolation without target-specific MMIO. */
             command(line);
         }
         /* Ownership covers the entire binary transaction. Silence releases it
