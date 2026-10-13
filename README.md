@@ -124,6 +124,14 @@ GPIO outputs can be controlled from the browser’s GPIO section or the serial
 protocol. Firmware reports available pins; each supports high impedance (Z),
 low (0), or high (1). See [GPIO controls](docs/rx-controls.md#gpio-outputs).
 
+
+### ESP32-S31 I/Q TX research (fork-only)
+
+An experimental, non-radiating Stage 1 adds passive TXCAPS?/TXPROBE?
+queries, an offline S31 PHY symbol audit, and host-only complex I/Q vectors.
+**ESP32-S31 arbitrary RF I/Q TX is not yet verified; release firmware
+remains RX-only.** See [the staged TX research plan](docs/s31-tx-development.md).
+
 ## Commands and transport
 
 Connect over native USB or a 3.3 V USB-to-UART adapter with crossed TX/RX
