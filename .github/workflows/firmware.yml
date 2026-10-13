@@ -72,6 +72,26 @@ jobs:
           path: artifacts/${{ matrix.id }}/
           if-no-files-found: error
           retention-days: 30
+      # Research-only inventory; never gate stable RX builds on uncertain vendor
+      # symbol availability. The JSON is uploaded independently of firmware.
+      - name: Inventory S31 PHY TX symbols
+        if: matrix.target == 'esp32s31'
+        continue-on-error: true
+        shell: bash
+        env:
+          PROFILE: ${{ matrix.id }}
+        run: |
+          source .esp-idf/export.sh
+          python3 tools/s31_tx_phy_audit.py --sdk .esp-idf --profile "$PROFILE" --strict-sdk \
+            --output "artifacts/s31-phy-tx-${PROFILE}.json"
+      - name: Upload S31 PHY TX inventory
+        if: matrix.target == 'esp32s31'
+        uses: actions/upload-artifact@v4
+        with:
+          name: research-s31-phy-${{ matrix.id }}
+          path: artifacts/s31-phy-tx-${{ matrix.id }}.json
+          if-no-files-found: warn
+          retention-days: 30
       - name: Upload build diagnostics
         if: failure()
         uses: actions/upload-artifact@v4

@@ -52,6 +52,15 @@ For each candidate, separately review the correctly pinned disassembly and
 record archive/object/symbol, callers, possible MMIO, bit-width/endianness,
 and independently corroborated evidence. The S31 source may differ from S3.
 
+GitHub Actions now also runs a **non-blocking PHY symbol inventory** after each
+successful S31 firmware build, using the matched preview SDK version, and
+uploads separate research-s31-phy-esp32s31 and
+research-s31-phy-esp32s31-stream JSON artifacts. The report records symbol
+locations in the vendor archives and explicitly sets tx_dac_verified=false.
+Because this is an experimental inventory, missing symbols or nm errors do not
+invalidate an otherwise working RX firmware build. Check the inventory step
+and its upload result; the build alone does not prove the report exists.
+
 ### Offline I/Q vectors
 
     python3 tools/s31_tx_iq_vectors.py /tmp/iq-tone.cs16le \

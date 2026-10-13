@@ -19,16 +19,24 @@ TOOLS = ("riscv32-esp-elf-nm", "xtensa-esp32s31-elf-nm",
          "xtensa-esp-elf-nm", "llvm-nm", "nm")
 
 
-def parse_nm_output(output):
-    """Portable nm -A output: archive:object:address TYPE symbol."""
-    symbols = set()
+def parse_nm_records(output):
+    """Return symbol + archive/object provenance (not an RF/DAC claim)."""
+    records = []
     for line in output.splitlines():
         match = NM_LINE.match(line.strip())
         if match and match["kind"].upper() not in {"U", "N"}:
             name = match["name"]
             if WORDS.search(name):
-                symbols.add(name)
-    return sorted(symbols)
+                prefix = match["prefix"]
+                # GNU nm -A: path/libphy.a:object.o:address TYPE symbol
+                source = prefix.rsplit(":", 1)[0] if ":" in prefix else prefix
+                records.append((name, source))
+    return records
+
+
+def parse_nm_output(output):
+    """Portable nm -A output: archive:object:address TYPE symbol."""
+    return sorted({name for name, _ in parse_nm_records(output)})
 
 
 def sdk_revision(sdk):
@@ -64,6 +72,7 @@ def main(argv=None):
     if not tool:
         ap.error("No nm tool available; pass --nm PATH")
     found = set()
+    sources = {}
     errors = []
     for archive in archives:
         cmd = [tool, "-A", "--defined-only", str(archive)]
@@ -72,7 +81,9 @@ def main(argv=None):
             errors.append({"file": str(archive.relative_to(args.sdk)),
                            "error": p.stderr[-800:]})
             continue
-        found.update(parse_nm_output(p.stdout))
+        for name, source in parse_nm_records(p.stdout):
+            found.add(name)
+            sources.setdefault(name, set()).add(source)
     symbols = sorted(found)
     report = {
         "profile": args.profile,
@@ -81,6 +92,7 @@ def main(argv=None):
         "sdk_matches_profile": actual == expected,
         "examined_archives": [str(p.relative_to(args.sdk)) for p in archives],
         "candidate_symbols": [s for s in symbols if STRONG.search(s)],
+        "symbol_locations": {s: sorted(sources[s]) for s in symbols},
         "other_relevant_symbols": [s for s in symbols if not STRONG.search(s)],
         "errors": errors,
         "tx_dac_verified": False,
