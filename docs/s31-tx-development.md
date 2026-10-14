@@ -193,6 +193,42 @@ Stage 2.
 
     python3 -m unittest discover -s tests
 
+### Separate TX register preflight firmware
+
+An opt-in `esp32s31txlab` image performs a bounded DC-field register
+roundtrip before the native-Burst gate can be opened. Its embedded VERSION?
+profile differs from ordinary `esp32s31` firmware. The release matrix and
+catalog remain unchanged; CI publishes it only as `research-s31-tx-lab`.
+The exporter requires an explicit research opt-in, marks its manifest
+`research_only=true`, and the release collector rejects research images.
+
+    python tools/build_firmware.py --profile esp32s31 --s31-tx-lab \
+      --version SOURCE_COMMIT --output research-artifacts
+
+This requires the ordinary S31 burst SDK commit and its activated environment.
+The normal builder explicitly sets `S31_TX_LAB=OFF`.
+
+| Lab-only command | Effect |
+| --- | --- |
+| `TXLAB?` | Reports register preflight support, fault latch, and `native_burst=0` |
+| `TXLABCHECK` | Forces TX RF off and TX clock off, tests four lower-20-bit patterns in `0x20100c08`, then restores the full saved register and RX state |
+
+The patterns cover zero, the signed ten-bit edge encodings 511/512 in either
+field, and all ones. They derive from the S31 archive setter, and do not
+establish I/Q lane orientation, sample packing for SRAM, or RF amplitude.
+The same other-core stall / critical section used by bounded RX capture
+protects the write/read/restore sequence. There are no PHY calls or waits
+inside that fixed sequence. Every write preserves bits `[31:20]`; TX clock
+bits `[17:16]` must remain zero. The command never calls a TX-on function,
+enables the TX clock, writes SRAM, changes the sample rate, or starts playback.
+It reports the number tested, mismatches, exact restoration, and clock state.
+Clock or restoration faults latch the experiment off until reset.
+
+Ordinary firmware still rejects both lab commands with `ERR tx_unverified`.
+RX commands are dispatched independently of the optional lab handler.
+Host tests inject readback mismatch, failed restoration, a busy TX clock,
+and unexpected clock changes; these must not bypass restoration or enable TX.
+
 ## Stage 2: native single I/Q burst — not implemented
 
 1. Discover S31-specific DAC SRAM source, ownership gate, clock, baseband

@@ -5,6 +5,7 @@
 /cmake-build-*/
 /managed_components/
 /artifacts/
+/research-artifacts/
 
 # Generated local configurations; retain source defaults
 /sdkconfig

@@ -115,6 +115,46 @@ jobs:
             build-${{ matrix.id }}/sdkconfig
           retention-days: 7
 
+  s31_tx_lab:
+    needs: targets
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Check out pinned S31 burst SDK for the research lab
+        uses: actions/checkout@v4
+        with:
+          repository: espressif/esp-idf
+          ref: 26dd2948925d44f41e3bb614fb044b7a0839a242
+          path: .esp-idf
+          submodules: recursive
+      - uses: actions/cache@v4
+        with:
+          path: ~/.espressif
+          key: idf-${{ runner.os }}-${{ runner.arch }}-26dd2948925d44f41e3bb614fb044b7a0839a242-esp32s31
+      - name: Install research build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y git wget flex bison gperf cmake ninja-build ccache libffi-dev libssl-dev python3-venv libusb-1.0-0
+          .esp-idf/install.sh esp32s31
+      - name: Build RF-disabled register preflight firmware
+        shell: bash
+        env:
+          FIRMWARE_VERSION: ${{ github.sha }}
+        run: |
+          source .esp-idf/export.sh
+          python tools/build_firmware.py --profile esp32s31 --s31-tx-lab \
+            --version "$FIRMWARE_VERSION" --output research-artifacts
+      - name: Upload separate S31 TX lab artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: research-s31-tx-lab
+          path: research-artifacts/esp32s31txlab/
+          if-no-files-found: error
+          retention-days: 30
+
   bundle:
     needs: build
     runs-on: ubuntu-24.04

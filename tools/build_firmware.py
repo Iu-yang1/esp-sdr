@@ -15,6 +15,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--matrix', action='store_true')
     parser.add_argument('--profile')
+    parser.add_argument('--s31-tx-lab', action='store_true',
+                        help='Build the separate RF-disabled S31 register-preflight artifact')
     parser.add_argument('--version', help='Source commit or release tag, recorded in the artifact')
     parser.add_argument('--output', type=Path, default=ROOT / 'artifacts')
     parser.add_argument('--build-root', type=Path, default=ROOT, help='Parent of per-profile build directories')
@@ -24,20 +26,27 @@ def main():
         parser.error('--jobs must be positive')
     catalog = json.loads((ROOT / 'firmware-targets.json').read_text())
     if args.matrix:
+        if args.s31_tx_lab:
+            parser.error('Research firmware cannot enter the release matrix')
         print(json.dumps({'include': catalog['profiles']}, separators=(',', ':')))
         return
     profiles = {p['id']: p for p in catalog['profiles']}
     if args.profile not in profiles or not args.version:
         parser.error('Specify --profile from firmware-targets.json and --version')
     profile = profiles[args.profile]
+    if args.s31_tx_lab:
+        if args.profile != 'esp32s31':
+            parser.error('TX lab requires the ordinary pinned S31 burst SDK')
+        profile = dict(profile, id='esp32s31txlab',
+                       label='ESP32-S31 TX register preflight (RF disabled)')
     sdk = os.environ.get('IDF_PATH')
     if not sdk:
         parser.error('Activate the pinned ESP-IDF environment first')
     revision = subprocess.check_output(['git', '-C', sdk, 'rev-parse', 'HEAD'], text=True).strip()
     if revision != profile['idf_ref']:
         parser.error(f"Profile requires ESP-IDF {profile['idf_ref']}; found {revision}")
-    build = args.build_root.resolve() / ('build-' + args.profile)
-    output = args.output.resolve() / args.profile
+    build = args.build_root.resolve() / ('build-' + profile['id'])
+    output = args.output.resolve() / profile['id']
     if output.exists():
         parser.error(f'Output already exists: {output}; choose a fresh artifact directory')
     env = dict(os.environ, IDF_PY_BUILD_JOBS=str(args.jobs), IDF_COMPONENT_MANAGER='1' if profile.get('streaming') else '0')
@@ -48,12 +57,14 @@ def main():
                 '-DSDKCONFIG=' + str(build / 'sdkconfig'),
                 '-DSDKCONFIG_DEFAULTS=' + str(ROOT / profile.get('sdkconfig', 'sdkconfig.defaults.' + profile['target'])),
                 '-DESP_SDR_STREAMING=' + ('ON' if profile.get('streaming') else 'OFF')]
+    command += ['-DS31_TX_LAB=' + ('ON' if args.s31_tx_lab else 'OFF')]
     if not profile.get('streaming'):
         command += ['-DRING_PROBE=OFF', '-DSAMPLE_RATE_PROBE=OFF', '-DFILTER_REGISTER_PROBE=OFF',
                     '-DS3_RF_PROBE=OFF', '-DC5_TUNE_PROBE=OFF', '-DS2_RF_PROBE=OFF']
     command.append('build')
     subprocess.run(command, env=env, check=True)
-    export(build, output, profile['id'], profile['label'], args.version, profile['allow_larger_flash'])
+    export(build, output, profile['id'], profile['label'], args.version,
+           profile['allow_larger_flash'], allow_s31_tx_lab=args.s31_tx_lab)
     provenance = {'profile': profile['id'], 'version': args.version, 'idf_commit': revision}
     (output / 'build-info.json').write_text(json.dumps(provenance, indent=2) + '\n')
     print(output)

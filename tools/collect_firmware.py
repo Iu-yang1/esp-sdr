@@ -23,6 +23,8 @@ def collect(source, output, catalog=None):
         if manifest.get('schema_version') != 1 or not manifest.get('variants'):
             raise ValueError('Invalid firmware manifest')
         for profile, variant in manifest['variants'].items():
+            if variant.get('research_only') or profile == 'esp32s31txlab':
+                raise ValueError('Refusing to bundle research firmware')
             if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]*', profile):
                 raise ValueError('Invalid profile ID')
             if profile in variants:

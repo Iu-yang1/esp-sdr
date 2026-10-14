@@ -44,17 +44,25 @@ def firmware_version(data):
         raise ValueError('Invalid embedded firmware version') from exc
 
 
-def export(build, output, board, label, version, allow_larger_flash=False):
+def export(build, output, board, label, version, allow_larger_flash=False,
+           *, allow_s31_tx_lab=False):
     if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]*', board):
         raise ValueError('Board ID must contain only letters, numbers, dots, underscores or hyphens')
     cache = (build / 'CMakeCache.txt').read_text()
+    lab = bool(re.search(r'^S31_TX_LAB:BOOL=ON$', cache, re.MULTILINE))
+    if allow_s31_tx_lab and (not lab or board != 'esp32s31txlab'):
+        raise ValueError('Research export requires the separate S31 TX lab profile')
     for line in cache.splitlines():
-        if re.match(r'(RING_PROBE|SAMPLE_RATE_PROBE|FILTER_REGISTER_PROBE|S3_RF_PROBE|S2_RF_PROBE|C5_TUNE_PROBE):', line):
+        if re.match(r'(RING_PROBE|SAMPLE_RATE_PROBE|FILTER_REGISTER_PROBE|S3_RF_PROBE|S2_RF_PROBE|C5_TUNE_PROBE|S31_TX_LAB):', line):
             if line.rsplit('=', 1)[-1].upper() not in ('OFF', 'FALSE', '0', 'NO', ''):
+                if line.startswith('S31_TX_LAB:') and allow_s31_tx_lab:
+                    continue
                 raise ValueError('Refusing to export diagnostic probe firmware')
     config = json.loads((build / 'config/sdkconfig.json').read_text())
     args = json.loads((build / 'flasher_args.json').read_text())
     target = config['IDF_TARGET']
+    if allow_s31_tx_lab and target != 'esp32s31':
+        raise ValueError('Research export requires S31 hardware')
     if args['extra_esptool_args']['chip'] != target:
         raise ValueError('Build target differs from flashing target')
     if not re.fullmatch(r'esp32[a-z0-9]*', target):
@@ -89,7 +97,12 @@ def export(build, output, board, label, version, allow_larger_flash=False):
         flash_size=settings['flash_size'], flash_size_policy='minimum' if allow_larger_flash else 'exact',
         flash_settings=settings, esptool_args=args['extra_esptool_args'], parts=parts)})
     if re.search(r'^ESP_SDR_STREAMING:BOOL=ON$', cache, re.MULTILINE):
+        if allow_s31_tx_lab:
+            raise ValueError('Research lab cannot use the streaming profile')
         manifest['variants'][board]['application'] = 'soapysdr'
+    if allow_s31_tx_lab:
+        manifest['variants'][board].update(research_only=True,
+                                           tx_lab='dc_roundtrip', native_tx_verified=False)
     if target == "esp32c2":
         manifest["variants"][board]["xtal_mhz"] = config["XTAL_FREQ"]
     dates = [date for _, data in payloads if (date := firmware_build_date(data))]

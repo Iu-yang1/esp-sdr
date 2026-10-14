@@ -374,6 +374,10 @@ static void command(const char *line) {
     } else reply("ERR command\n");
 }
 
+#ifdef S31_TX_LAB
+#include "s31_tx_lab.h"
+#endif
+
 void app_main(void) {
     esp_log_level_set("*", ESP_LOG_NONE);
     esp_err_t e = nvs_flash_init();
@@ -428,10 +432,15 @@ void app_main(void) {
         owner=port;
         if(!strcmp(line,"RELEASE")) {
             reply("OK\n");owner=-1;
-        } else if (!s31_tx_probe_command(line)) {
-            /* Keep passive probes out of the RX parser: host regression tests
-             * compile command() in isolation without target-specific MMIO. */
-            command(line);
+        } else {
+            bool handled = false;
+#ifdef S31_TX_LAB
+            handled = s31_tx_lab_command(line);
+#endif
+            if (!handled && !s31_tx_probe_command(line)) {
+                /* Keep research commands outside the isolated RX parser. */
+                command(line);
+            }
         }
         /* Ownership covers the entire binary transaction. Silence releases it
          * after five seconds. */

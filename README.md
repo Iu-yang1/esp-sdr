@@ -132,6 +132,10 @@ queries, an offline S31 PHY symbol audit, and host-only complex I/Q vectors.
 **ESP32-S31 arbitrary RF I/Q TX is not yet verified; release firmware
 remains RX-only.** See [the staged TX research plan](docs/s31-tx-development.md).
 
+A separate `research-s31-tx-lab` artifact can test the identified S31 TX DC
+register fields with RF and TX clocks disabled, followed by exact restoration.
+It is excluded from the release bundle and does not implement I/Q playback.
+
 ## Commands and transport
 
 Connect over native USB or a 3.3 V USB-to-UART adapter with crossed TX/RX

@@ -24,6 +24,15 @@ class FirmwareCollect(unittest.TestCase):
         self.assertTrue((self.root / 'firmware/esp32s3/0-app.bin').exists())
         self.assertIn('@esp32s3/flash_args', (self.root / 'firmware/esp32s3/flash_command.txt').read_text())
 
+    def test_research_artifact_never_enters_release_bundle(self):
+        path = self.root / 'output/manifest.json'
+        manifest = json.loads(path.read_text())
+        manifest['variants']['esp32s3']['research_only'] = True
+        path.write_text(json.dumps(manifest))
+        with self.assertRaisesRegex(ValueError, 'research'):
+            collector.collect(self.root/'output', self.root/'firmware')
+        self.assertFalse((self.root/'firmware').exists())
+
     def test_corrupt_input_never_produces_catalog(self):
         (self.root / 'output/esp32s3/0-app.bin').write_bytes(b'corrupt')
         with self.assertRaisesRegex(ValueError, 'integrity'):
