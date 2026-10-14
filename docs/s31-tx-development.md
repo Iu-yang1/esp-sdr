@@ -1,6 +1,6 @@
 # ESP32-S31 native I/Q TX research (fork-only)
 
-**Status (2026-10-14): Stage 1 software implemented; S31 RF DAC TX unverified.**
+**Status (2026-10-14): Stage 1 software and passive S31 hardware probe verified; RF DAC TX unverified.**
 
 This work is experimental and does not add TX to standard ESP-SDR or SoapyESPSDR.
 Do not infer TX capability from successful RX streaming.
@@ -104,6 +104,26 @@ identified from corroborated S31 source and silicon evidence. The report keeps
 `tx_dac_verified=false`; no RF TX implementation is authorized by these
 findings.
 
+### S31 board smoke test (2026-10-14)
+
+Flashed the Actions `esp32s31` Burst artifact built from PR merge revision
+`4fc14038274b0327e8994a93e68d4ca3fc216cec` (PR head `b8b83f1`) to an
+ESP32-S31 revision 0.0 over UART0 at 2 Mbaud. `esptool` identified a 16 MB
+flash and verified each written image. No full-chip erase was requested.
+
+- `VERSION?` reported the expected revision and `profile=esp32s31`.
+- `TXCAPS?` returned `dac=unverified burst=0 stream=0 soapy=0 rf=disabled`.
+- `TXPROBE?` returned a passive snapshot:
+  `rx_dump_ctrl=03c26800 rx_dump_mode=00060000 rx_dump_mac=00000000 rx_gain=004047ed`.
+- RX-only `CAP16 256 0` returned 512 payload bytes; the host CRC-32 matched
+  the firmware header. Capture time reported by the firmware was 6 us. A
+  second `TXCAPS?` still reported RF disabled after capture.
+
+This verifies firmware startup, the UART command path, passive register
+reads, and a bounded RX capture on this board. No external RF stimulus or
+instrumented RF measurement was used; the capture does not validate TX DAC
+playback or characterize RX sensitivity. No TX-start command was sent.
+
 ### Offline I/Q vectors
 
     python3 tools/s31_tx_iq_vectors.py /tmp/iq-tone.cs16le \
@@ -182,9 +202,9 @@ modulation has no automatic compliance exemption, including inside ISM bands.
 
 | Milestone | Software | S31 hardware |
 | --- | --- | --- |
-| Existing S31 RX | Source preserved apart from read-only probe | Regression pending |
-| Passive TXCAPS?/TXPROBE? | Implemented; host test included | Snapshot pending |
-| Pinned PHY symbol audit | Script implemented | Inventory pending |
+| Existing S31 RX | Source preserved apart from read-only probe | 256-sample CAP16 smoke test passed; external RF stimulus not tested |
+| Passive TXCAPS?/TXPROBE? | Implemented; host test included | Passed on S31 rev 0.0; RF reported disabled |
+| Pinned PHY symbol audit | Script and focused disassembly in CI | Both exact-profile artifacts reviewed; no DAC path verified |
 | Offline CS16LE test vectors | Implemented; host test included | Not applicable |
 | RF DAC I/Q burst | Not implemented | Unverified |
 | Gapless dual-bank TX | Not implemented | Unverified |
