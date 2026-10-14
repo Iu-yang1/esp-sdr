@@ -60,9 +60,16 @@ int main(void) {
     assert(reads == 4);
     assert(strstr(message, "rx_dump_ctrl=20109004"));
     assert(strstr(message, "rx_gain=2010702c"));
+    assert(s31_tx_probe_command("TXPATH?"));
+    assert(reads == 11 && writes == 0);
+    assert(strstr(message, "dac_rate=20100448"));
+    assert(strstr(message, "tx_clock=20100890"));
+    assert(strstr(message, "tone_ctrl=2010040c"));
+    assert(strstr(message, "dac_scale=20100c04"));
+    assert(strstr(message, "tx_filter=20107440"));
     assert(s31_tx_probe_command("TXSTART"));
     assert(strstr(message, "ERR tx_unverified"));
-    assert(writes == 0 && reads == 4);
+    assert(writes == 0 && reads == 11);
     return 0;
 }
 """

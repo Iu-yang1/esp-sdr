@@ -21,17 +21,18 @@ existence or register map of the TX DAC.
 
 ## Stage 1: non-radiating firmware probe — implemented
 
-The ordinary S31 burst firmware has two new commands:
+The ordinary S31 burst firmware has these passive diagnostic commands:
 
 | Serial command | Effect |
 | --- | --- |
 | TXCAPS? | Reports DAC unverified, burst/stream/Soapy TX disabled |
 | TXPROBE? | Passively reads existing RX DUMP_CTRL, DUMP_MODE, DUMP_MAC, RX_GAIN |
+| TXPATH? | Passively reads seven TX-related controls identified in the S31 ROM |
 | Other TX-prefixed commands | ERR tx_unverified |
 
 The snapshot is **not a DAC test**. It only records known RX PHY state without
-mode changes, retuning or register writes. The CAPS list advertises TXPROBE,
-not TX. No new RF transmitter is enabled.
+mode changes, retuning or register writes. The CAPS list advertises TXPROBE
+and TXPATH. No new RF transmitter is enabled.
 
 ### Offline PHY archive audit
 
@@ -97,12 +98,62 @@ library revisions establishes these limited facts:
   state. Their names and MMIO accesses do not identify an arbitrary-I/Q data
   input or settle the DAC rate, SRAM ownership, or RF mux.
 
-These are **binary-level findings**, not public register definitions or
-hardware observations. No TX DAC source mux, playback-rate divider, bank
-ownership/switch protocol, or safe TX/RX restoration sequence has yet been
-identified from corroborated S31 source and silicon evidence. The report keeps
-`tx_dac_verified=false`; no RF TX implementation is authorized by these
-findings.
+These are **archive-level findings**, not public register definitions or
+playback observations. The separate ROM audit below resolves several control
+routines, but the DAC source mux, SRAM playback trigger, bank ownership, sample
+format, and rate in Hz remain unresolved. `tx_dac_verified=false` is retained.
+
+### S31 ROM control evidence (2026-10-14)
+
+The archive-only inventory omitted functions supplied by mask ROM. Both
+pinned SDKs specify the `esp-rom-elfs` package `20260528` in `tools/tools.json`.
+The official package was checked against its SDK SHA-256
+`caa463d3cbef2430a5a35847c1d9f2f152403b17a802050927ff60c8da54fe46`.
+Its S31 rev-0 ELF SHA-256 is
+`a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87`.
+
+`tools/s31_tx_rom_audit.py` resolves ten control routines from the ELF and
+checks exported entry trampolines against the SDK's
+[`esp32s31.rom.phy.ld`](https://github.com/espressif/esp-idf/blob/26dd2948925d44f41e3bb614fb044b7a0839a242/components/esp_rom/esp32s31/ld/esp32s31.rom.phy.ld).
+The ELF comes from the official
+[`esp-rom-elfs` release](https://github.com/espressif/esp-rom-elfs/releases/tag/20260528).
+Both SDK profiles produce identical function evidence. A read-only comparison
+on the connected S31 rev-0 board checked 13 mask ROM pages (3328 bytes),
+covering the selected entries and bodies: every byte matched the ELF.
+This validates the code evidence against this silicon revision; it does not
+execute the TX routines or establish RF playback.
+
+| S31 ROM function | Public entry / implementation | Binary-level register evidence |
+| --- | --- | --- |
+| `phy_dac_rate_set` | `0x2f801310` / `0x2f82a71c` | RMW `0x20100448[1:0]`; copies argument bit 0 to both bits. Actual rate in Hz is unmeasured. |
+| `phy_set_txclk_en` | `0x2f8013fc` / `0x2f827cd2` | RMW `0x20100890[17:16]`; nonzero argument writes 3, zero writes 0. |
+| `phy_dac_scale_set` | `0x2f8015a0` / `0x2f82873a` | RMW `0x20100c04[23:16]` and `[15:8]`; writes `0xff` or 0 based on a Boolean argument. |
+| `phy_bbtx_outfilter` | `0x2f801480` / `0x2f828576` | RMW `0x20107440`, including bits 4, 5 and 6. Filter response is unmeasured. |
+| `phy_start_tx_tone_step` / `phy_stop_tx_tone` | `0x2f801404` / `0x2f828776`; `0x2f801408` / `0x2f828878` | RMW `0x2010040c`, `0x2010041c`, `0x20100420`; tone control evidence only, no SRAM sample source. |
+| `phy_pbus_xpd_tx_off` / `phy_pbus_xpd_tx_on` | `0x2f801618` / `0x2f824396`; `0x2f80161c` / `0x2f82440e` | ROM implementations identified and byte-matched; the audit does not call either function. |
+
+`TXPATH?` exposes a snapshot of the seven registers above. It performs only
+32-bit reads from registers whose ROM routines use read-modify-write; it does
+not call those routines, change the DAC rate/clock, grant memory, or start TX.
+`TXCAPS?` adds `pathprobe=1`; all actual TX capabilities remain zero.
+
+Offline reproduction (the ROM ELF directory is exported by ESP-IDF):
+
+    python3 tools/s31_tx_rom_audit.py --sdk /path/to/esp-idf \
+      --profile esp32s31 --strict-sdk \
+      --rom-elf "$ESP_ROM_ELF_DIR/esp32s31_rev0_rom.elf" \
+      --output reports/s31-rom-tx.json
+
+To compare the board, add `--readback-port COM31 --esptool-python /path/to/python`.
+This explicitly resets the board into the ROM loader and reads only selected
+256-byte mask ROM pages in `0x2f800000..0x2f84ffff`, at most 16 KiB. It neither
+writes Flash/MMIO/SRAM nor executes PHY TX controls. The firmware restarts
+after each page. Device comparison reports `device_rom_matches=true` only
+after every planned page matches; the report still sets `tx_dac_verified=false`.
+
+CI uploads an additional `s31-rom-tx-<profile>.json` alongside the existing
+archive report. Missing functions, invalid trampolines, disassembly errors,
+and device readback mismatches make the ROM auditor return nonzero.
 
 ### S31 board smoke test (2026-10-14)
 
@@ -210,6 +261,7 @@ modulation has no automatic compliance exemption, including inside ISM bands.
 | Existing S31 RX | Source preserved apart from read-only probe | 256-sample CAP16 smoke test passed; external RF stimulus not tested |
 | Passive TXCAPS?/TXPROBE? | Implemented; host test included | Passed on S31 rev 0.0; RF reported disabled |
 | Pinned PHY symbol audit | Script and focused disassembly in CI | Both exact-profile artifacts reviewed; no DAC path verified |
+| S31 ROM TX controls | Ten function bodies and entry checks in CI; passive TXPATH? | 13 mask ROM pages matched S31 rev 0.0; playback trigger/source unresolved |
 | Offline CS16LE test vectors | Implemented; host test included | Not applicable |
 | RF DAC I/Q burst | Not implemented | Unverified |
 | Gapless dual-bank TX | Not implemented | Unverified |

@@ -84,12 +84,25 @@ jobs:
           source .esp-idf/export.sh
           python3 tools/s31_tx_phy_audit.py --sdk .esp-idf --profile "$PROFILE" --strict-sdk \
             --output "artifacts/s31-phy-tx-${PROFILE}.json"
-      - name: Upload S31 PHY TX audit
+      - name: Audit S31 ROM TX control paths
         if: matrix.target == 'esp32s31'
+        continue-on-error: true
+        shell: bash
+        env:
+          PROFILE: ${{ matrix.id }}
+        run: |
+          source .esp-idf/export.sh
+          python3 tools/s31_tx_rom_audit.py --sdk .esp-idf --profile "$PROFILE" --strict-sdk \
+            --rom-elf "${ESP_ROM_ELF_DIR}/esp32s31_rev0_rom.elf" \
+            --output "artifacts/s31-rom-tx-${PROFILE}.json"
+      - name: Upload S31 PHY TX audit
+        if: always() && matrix.target == 'esp32s31'
         uses: actions/upload-artifact@v4
         with:
           name: research-s31-phy-${{ matrix.id }}
-          path: artifacts/s31-phy-tx-${{ matrix.id }}.json
+          path: |
+            artifacts/s31-phy-tx-${{ matrix.id }}.json
+            artifacts/s31-rom-tx-${{ matrix.id }}.json
           if-no-files-found: warn
           retention-days: 30
       - name: Upload build diagnostics
