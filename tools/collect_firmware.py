@@ -23,6 +23,8 @@ def collect(source, output, catalog=None):
         if manifest.get('schema_version') != 1 or not manifest.get('variants'):
             raise ValueError('Invalid firmware manifest')
         for profile, variant in manifest['variants'].items():
+            if variant.get('research_only') or profile == 'esp32s31txlab':
+                raise ValueError('Refusing to bundle research firmware')
             if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]*', profile):
                 raise ValueError('Invalid profile ID')
             if profile in variants:
@@ -79,7 +81,8 @@ def collect(source, output, catalog=None):
     for extra, relative in metadata:
         text = extra.read_text()
         if extra.name == 'flash_command.txt':
-            text = text.replace('@flash_args', '@' + str(relative.parent / 'flash_args'))
+            flash_args_path = (relative.parent / 'flash_args').as_posix()
+            text = text.replace('@flash_args', '@' + flash_args_path)
         (output / relative).write_text(text)
     (output / 'manifest.json').write_text(json.dumps(combined, indent=2) + '\n')
     return combined

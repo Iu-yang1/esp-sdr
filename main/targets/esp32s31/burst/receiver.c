@@ -89,6 +89,7 @@ static void reply(const char *fmt, ...) {
 extern void phy_chip_set_chan(unsigned, unsigned);
 extern void phy_set_freq(unsigned, int);
 #include "tuning.h"
+#include "s31_tx_probe.h"
 extern void phy_loopback_mode_en(unsigned);
 extern void phy_bb_bss_cbw40_dig(unsigned);
 extern void phy_bb_cbw_chan_cfg(unsigned);
@@ -326,7 +327,7 @@ static void command(const char *line) {
     uint64_t nonce;
     char extra;
     if (!strcmp(line, "INFO")) reply("S31SDR 6 burst 16380\n");
-    else if (!strcmp(line, "CAPS")) reply("CAPS VERSION GPIO SPEC SPECN SPECCAPS SPECSTAT DCT UARTBAUD RXLIMITS SERIALLEASE DUALSERIAL TUNEEXT RX40 LPFANA GAIN HWAGC IQ8\n");
+    else if (!strcmp(line, "CAPS")) reply("CAPS VERSION GPIO SPEC SPECN SPECCAPS SPECSTAT DCT UARTBAUD RXLIMITS SERIALLEASE DUALSERIAL TUNEEXT RX40 LPFANA GAIN HWAGC IQ8 TXPROBE TXPATH\n");
     else if (sscanf(line, "BANDWIDTH %u %c", &n, &extra)==1 &&
              (!n || (n>=RX_BANDWIDTH_MIN && n<=RX_BANDWIDTH_MAX))) {
         rx_filter=rx_bandwidth_dcap(n); reply("OK\n");
@@ -372,6 +373,10 @@ static void command(const char *line) {
         reply("END\n");
     } else reply("ERR command\n");
 }
+
+#ifdef S31_TX_LAB
+#include "s31_tx_lab.h"
+#endif
 
 void app_main(void) {
     esp_log_level_set("*", ESP_LOG_NONE);
@@ -428,7 +433,14 @@ void app_main(void) {
         if(!strcmp(line,"RELEASE")) {
             reply("OK\n");owner=-1;
         } else {
-            command(line);
+            bool handled = false;
+#ifdef S31_TX_LAB
+            handled = s31_tx_lab_command(line);
+#endif
+            if (!handled && !s31_tx_probe_command(line)) {
+                /* Keep research commands outside the isolated RX parser. */
+                command(line);
+            }
         }
         /* Ownership covers the entire binary transaction. Silence releases it
          * after five seconds. */

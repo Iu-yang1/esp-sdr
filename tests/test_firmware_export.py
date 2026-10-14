@@ -48,6 +48,22 @@ class FirmwareExport(unittest.TestCase):
         self.assertEqual(variant['application'], 'soapysdr')
         self.assertEqual(variant['target'], 'esp32s31')
 
+    def test_tx_lab_requires_explicit_separate_export(self):
+        (self.build / 'CMakeCache.txt').write_text('S31_TX_LAB:BOOL=ON\n')
+        with self.assertRaisesRegex(ValueError, 'diagnostic'):
+            self.export()
+        (self.build / 'config/sdkconfig.json').write_text(json.dumps({'IDF_TARGET':'esp32s31'}))
+        self.args['extra_esptool_args']['chip'] = 'esp32s31'
+        self.save_args()
+        with self.assertRaisesRegex(ValueError, 'separate'):
+            exporter.export(self.build, self.root/'output', 'esp32s31', 'S31', 'test',
+                            allow_s31_tx_lab=True)
+        path = exporter.export(self.build, self.root/'output', 'esp32s31txlab', 'Lab', 'test',
+                               allow_s31_tx_lab=True)
+        variant = json.loads(path.read_text())['variants']['esp32s31txlab']
+        self.assertTrue(variant['research_only'])
+        self.assertFalse(variant['native_tx_verified'])
+
     def test_build_date_from_image_descriptor(self):
         data = bytearray(144)
         data[32:36] = bytes.fromhex('3254cdab')
