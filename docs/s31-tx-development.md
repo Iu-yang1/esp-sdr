@@ -118,11 +118,16 @@ flash and verified each written image. No full-chip erase was requested.
 - RX-only `CAP16 256 0` returned 512 payload bytes; the host CRC-32 matched
   the firmware header. Capture time reported by the firmware was 6 us. A
   second `TXCAPS?` still reported RF disabled after capture.
+- Follow-up fail-closed checks sent `TXSTART`, `TXPLAY 256`, and
+  `TXSTREAM 250000`; all returned `ERR tx_unverified`. A second RX-only
+  `CAP16 256 0` again returned 512 bytes with a matching CRC, and `TXCAPS?`
+  still reported RF disabled.
 
 This verifies firmware startup, the UART command path, passive register
-reads, and a bounded RX capture on this board. No external RF stimulus or
-instrumented RF measurement was used; the capture does not validate TX DAC
-playback or characterize RX sensitivity. No TX-start command was sent.
+reads, rejection of unimplemented TX commands, and a bounded RX capture on
+this board. No external RF stimulus or instrumented RF measurement was used;
+the capture does not validate TX DAC playback or characterize RX sensitivity.
+No TX-start command was accepted or sent to PHY controls.
 
 ### Offline I/Q vectors
 
