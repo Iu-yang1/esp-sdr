@@ -101,6 +101,32 @@ class S31OfflineTools(unittest.TestCase):
         self.assertTrue(mod.STRONG.search("dactrig"))
         self.assertFalse(mod.STRONG.search("phy_set_txclk_en"))
 
+    def test_extract_focused_objdump_body(self):
+        mod = import_file("phy_audit", ROOT / "tools/s31_tx_phy_audit.py")
+        output = ("archive.a:foo.o: file format elf32-littleriscv\n"
+                  "Disassembly of section .text.dactrig:\n"
+                  "00000000 <dactrig>:\n"
+                  "   0: 2f0608b7 lui a7,0x2f060\n"
+                  "   4: 00a82023 sw a0,0(a6)\n"
+                  "Disassembly of section .text.other:\n"
+                  "00000000 <other>:\n")
+        body = mod.extract_function_disassembly(output, "dactrig")
+        self.assertIn("<dactrig>", body)
+        self.assertIn("lui a7,0x2f060", body)
+        self.assertNotIn("<other>", body)
+        self.assertIsNone(mod.extract_function_disassembly(output, "missing"))
+
+    def test_parse_archive_references(self):
+        mod = import_file("phy_audit", ROOT / "tools/s31_tx_phy_audit.py")
+        output = ("mac_common.o: file format elf32-littleriscv\n"
+                  "RELOCATION RECORDS FOR [.text.caller]:\n"
+                  "00000004 R_RISCV_CALL dactrig\n"
+                  "phy_test.o: file format elf32-littleriscv\n"
+                  "RELOCATION RECORDS FOR [.text.other]:\n"
+                  "00000008 R_RISCV_CALL unrelated\n")
+        self.assertEqual(mod.parse_objdump_references(output, ["dactrig"]),
+                         {"dactrig": ["mac_common.o.text.caller"]})
+
     def test_cs16_vectors(self):
         mod = import_file("tx_vectors", ROOT / "tools/s31_tx_iq_vectors.py")
         data = mod.make_tone(1000, 250, 4, 0.5)

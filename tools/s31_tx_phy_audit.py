@@ -17,6 +17,14 @@ STRONG = re.compile(r"(?:dactrig|dac.*(?:dump|play|test)|(?:tx|fedump).*(?:mem|i
 NM_LINE = re.compile(r"^(?P<prefix>.+?)\s+(?P<kind>[A-Za-z])\s+(?P<name>[A-Za-z_$][\w.$@]*)$")
 TOOLS = ("riscv32-esp-elf-nm", "xtensa-esp32s31-elf-nm",
          "xtensa-esp-elf-nm", "llvm-nm", "nm")
+OBJDUMP_TOOLS = ("riscv32-esp-elf-objdump", "xtensa-esp32s31-elf-objdump",
+                 "xtensa-esp-elf-objdump", "llvm-objdump", "objdump")
+FOCUS_SYMBOLS = (
+    "dactrig", "fedump_rd_txmem", "fedump_wr_txmem", "phy_tx_tone",
+    "phy_start_tx_tone_step_new", "phy_stop_tx_tone_new",
+    "phy_set_tx_gain_mem_new", "phy_set_tx_cfr_mem", "rftest_open_clk",
+    "tx_contin_en", "esp_tx_func",
+)
 
 
 def parse_nm_records(output):
@@ -45,12 +53,77 @@ def sdk_revision(sdk):
     return p.stdout.strip() if p.returncode == 0 else None
 
 
+def extract_function_disassembly(output, symbol):
+    """Keep only one function body from GNU objdump's archive output."""
+    lines = output.splitlines()
+    start = next((i for i, line in enumerate(lines)
+                  if re.match(r"^[0-9a-fA-F]+ <" + re.escape(symbol) + r">:$", line)), None)
+    if start is None:
+        return None
+    body = [lines[start]]
+    for line in lines[start + 1:]:
+        if line.startswith("Disassembly of section ") or re.match(r"^\S+\.o:\s+file format ", line):
+            break
+        body.append(line)
+    return "\n".join(body).rstrip()
+
+
+def parse_objdump_references(output, symbols):
+    """Map archive relocation references to their object and source section."""
+    references = {symbol: [] for symbol in symbols}
+    obj = "unknown.o"
+    section = None
+    for line in output.splitlines():
+        match = re.match(r"^(?P<obj>[^\s:]+\.o):\s+file format ", line)
+        if match:
+            obj = match["obj"]
+            section = None
+            continue
+        match = re.match(r"^RELOCATION RECORDS FOR \[(?P<section>[^]]+)\]:$", line)
+        if match:
+            section = match["section"]
+            continue
+        match = re.match(r"^\s*[0-9a-fA-F]+\s+\S+\s+(\S+)", line)
+        if match and section:
+            target = match[1].split("+")[0]
+            if target in references:
+                references[target].append(obj + section)
+    return {symbol: sorted(set(callers)) for symbol, callers in references.items()}
+
+
+def focus_disassembly(sdk, archives, symbols, sources, objdump):
+    """Disassemble a bounded set of TX-related symbols and retain provenance."""
+    result = {}
+    available = set(symbols)
+    for symbol in FOCUS_SYMBOLS:
+        if symbol not in available:
+            continue
+        archive_name = next((source.rsplit(":", 1)[0]
+                             for source in sources.get(symbol, [])), None)
+        archive = sdk / archive_name if archive_name else None
+        if archive not in archives:
+            archive = None
+        if archive is None:
+            result[symbol] = {"error": "symbol source archive not found"}
+            continue
+        p = subprocess.run([objdump, "-drwC", "--disassemble=" + symbol, str(archive)],
+                           capture_output=True, text=True, check=False)
+        body = extract_function_disassembly(p.stdout, symbol)
+        result[symbol] = {
+            "archive": str(archive.relative_to(sdk)),
+            "disassembly": body,
+            "error": p.stderr[-800:] if p.returncode else None,
+        }
+    return result
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--sdk", type=Path, required=True, help="Pinned ESP-IDF checkout")
     ap.add_argument("--profile", choices=("esp32s31", "esp32s31-stream"),
                     default="esp32s31-stream")
     ap.add_argument("--nm", help="Path to nm from the ESP-IDF toolchain")
+    ap.add_argument("--objdump", help="Path to target objdump; defaults to one on PATH")
     ap.add_argument("--output", type=Path, help="Write JSON report here")
     ap.add_argument("--strict-sdk", action="store_true",
                     help="Reject a revision other than firmware-targets.json")
@@ -85,6 +158,19 @@ def main(argv=None):
             found.add(name)
             sources.setdefault(name, set()).add(source)
     symbols = sorted(found)
+    objdump = args.objdump or next((p for p in OBJDUMP_TOOLS if shutil.which(p)), None)
+    disassembly = focus_disassembly(args.sdk, archives, symbols, sources, objdump) if objdump else {}
+    references = {}
+    if objdump:
+        for archive in archives:
+            p = subprocess.run([objdump, "-r", str(archive)], capture_output=True,
+                               text=True, check=False)
+            if p.returncode == 0:
+                for symbol, callers in parse_objdump_references(p.stdout, FOCUS_SYMBOLS).items():
+                    archive_name = str(archive.relative_to(args.sdk))
+                    references.setdefault(symbol, []).extend(
+                        archive_name + ":" + caller for caller in callers)
+        references = {symbol: sorted(set(callers)) for symbol, callers in references.items()}
     report = {
         "profile": args.profile,
         "expected_idf_commit": expected,
@@ -94,6 +180,9 @@ def main(argv=None):
         "candidate_symbols": [s for s in symbols if STRONG.search(s)],
         "symbol_locations": {s: sorted(sources[s]) for s in symbols},
         "other_relevant_symbols": [s for s in symbols if not STRONG.search(s)],
+        "objdump_tool": objdump,
+        "focused_disassembly": disassembly,
+        "focused_references": references,
         "errors": errors,
         "tx_dac_verified": False,
         "note": "Symbol presence is not evidence of playable DAC or transmitted RF."

@@ -1,6 +1,6 @@
 # ESP32-S31 native I/Q TX research (fork-only)
 
-**Status (2026-10-13): Stage 1 software implemented; S31 RF DAC TX unverified.**
+**Status (2026-10-14): Stage 1 software implemented; S31 RF DAC TX unverified.**
 
 This work is experimental and does not add TX to standard ESP-SDR or SoapyESPSDR.
 Do not infer TX capability from successful RX streaming.
@@ -43,23 +43,66 @@ revisions. Install the matching toolchain and obtain its PHY archive first.
       --profile esp32s31-stream --strict-sdk \
       --output reports/s31-tx-symbols.json
 
-Optionally pass --nm /path/to/target-nm. The tool finds defined symbols
-containing DAC, TX, I/Q, dump, PBUS, tone or PLL terms. This is **candidate
-discovery only**, never a verified register map. If there is no PHY archive
-or nm fails, treat that as a tool/environment error, not a failed DAC test.
+Optionally pass --nm /path/to/target-nm and --objdump
+/path/to/target-objdump. The tool finds defined symbols containing DAC, TX,
+I/Q, dump, PBUS, tone or PLL terms. When objdump is available, it also records
+focused function disassemblies and archive relocation references. This is
+**candidate discovery only**, never a verified register map. If there is no
+PHY archive or nm fails, treat that as a tool/environment error, not a failed
+DAC test.
 
 For each candidate, separately review the correctly pinned disassembly and
 record archive/object/symbol, callers, possible MMIO, bit-width/endianness,
 and independently corroborated evidence. The S31 source may differ from S3.
 
-GitHub Actions now also runs a **non-blocking PHY symbol inventory** after each
-successful S31 firmware build, using the matched preview SDK version, and
+GitHub Actions now also runs a **non-blocking PHY symbol and disassembly audit**
+after each successful S31 firmware build, using the matched preview SDK version, and
 uploads separate research-s31-phy-esp32s31 and
 research-s31-phy-esp32s31-stream JSON artifacts. The report records symbol
-locations in the vendor archives and explicitly sets tx_dac_verified=false.
-Because this is an experimental inventory, missing symbols or nm errors do not
-invalidate an otherwise working RX firmware build. Check the inventory step
-and its upload result; the build alone does not prove the report exists.
+locations, focused disassembly, and references in the vendor archives and
+explicitly sets tx_dac_verified=false. Because this is experimental analysis,
+missing symbols or audit errors do not invalidate an otherwise working RX
+firmware build. Check the audit step and its upload result; the build alone
+does not prove the report exists.
+
+### P0 evidence from pinned libraries (2026-10-14)
+
+The two Actions reports for commit `b482766` matched their pinned ESP-IDF
+revisions and each listed 286 relevant defined symbols with no `nm` errors:
+
+| Profile | ESP-IDF commit | Main candidate locations |
+| --- | --- | --- |
+| S31 burst | `26dd2948925d44f41e3bb614fb044b7a0839a242` | `dactrig` in `librftest.a:mac_common.o`; `fedump_rd_txmem` / `fedump_wr_txmem` in `librftest.a:phy_test.o`; TX tone/gain functions in `libphy.a` |
+| S31 streaming | `c712a0dde385d659a1470a136251980d31a70bc1` | Same candidate symbol locations |
+
+The matched archives contain ELF32 RISC-V objects. Direct disassembly of both
+library revisions establishes these limited facts:
+
+- `fedump_rd_txmem` and `fedump_wr_txmem` are each two-byte functions whose
+  only instruction is `ret`. They are stubs in these pinned archives and do
+  not read or write TX memory.
+- `dactrig` forms address `0x2f060000`, loops `0x20000` times and issues one
+  32-bit `sw` at `base + loop_index` per iteration. The stores therefore
+  overlap at byte increments. It then calls `ets_delay_us(10000)` and
+  `phy_printf`. The relocation scan found no direct caller for `dactrig` in
+  the four inspected PHY archives. This is evidence of CPU writes encoded in
+  an otherwise unreferenced test helper; the address is not identified here
+  as an S31 DAC SRAM bank. It does not demonstrate a DAC playback trigger or
+  arbitrary I/Q format. Do not write there from firmware on this evidence.
+- `phy_tx_tone` calls `phy_force_txon_mode` and
+  `phy_start_tx_tone_step_new`; `phy_stop_tx_tone_new` clears related control
+  bits. This is a tone-test path, not proof of user-supplied complex-sample
+  playback.
+- `phy_set_tx_gain_mem_new` and `phy_set_tx_cfr_mem` manipulate PHY gain/CFR
+  state. Their names and MMIO accesses do not identify an arbitrary-I/Q data
+  input or settle the DAC rate, SRAM ownership, or RF mux.
+
+These are **binary-level findings**, not public register definitions or
+hardware observations. No TX DAC source mux, playback-rate divider, bank
+ownership/switch protocol, or safe TX/RX restoration sequence has yet been
+identified from corroborated S31 source and silicon evidence. The report keeps
+`tx_dac_verified=false`; no RF TX implementation is authorized by these
+findings.
 
 ### Offline I/Q vectors
 
