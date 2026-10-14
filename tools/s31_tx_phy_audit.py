@@ -53,6 +53,19 @@ def sdk_revision(sdk):
     return p.stdout.strip() if p.returncode == 0 else None
 
 
+def relative_to_sdk(sdk, path):
+    """Normalize nm provenance whether SDK paths are absolute or relative."""
+    try:
+        return Path(path).relative_to(sdk).as_posix()
+    except ValueError:
+        return str(path)
+
+
+def normalize_symbol_sources(sdk, sources):
+    return {symbol: {relative_to_sdk(sdk, source) for source in paths}
+            for symbol, paths in sources.items()}
+
+
 def extract_function_disassembly(output, symbol):
     """Keep only one function body from GNU objdump's archive output."""
     lines = output.splitlines()
@@ -158,6 +171,7 @@ def main(argv=None):
             found.add(name)
             sources.setdefault(name, set()).add(source)
     symbols = sorted(found)
+    sources = normalize_symbol_sources(args.sdk, sources)
     objdump = args.objdump or next((p for p in OBJDUMP_TOOLS if shutil.which(p)), None)
     disassembly = focus_disassembly(args.sdk, archives, symbols, sources, objdump) if objdump else {}
     references = {}

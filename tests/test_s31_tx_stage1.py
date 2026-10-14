@@ -103,6 +103,16 @@ class S31OfflineTools(unittest.TestCase):
 
     def test_extract_focused_objdump_body(self):
         mod = import_file("phy_audit", ROOT / "tools/s31_tx_phy_audit.py")
+        self.assertEqual(mod.relative_to_sdk(Path(".esp-idf"),
+                                             ".esp-idf/components/esp_phy/lib.a"),
+                         "components/esp_phy/lib.a")
+        self.assertEqual(mod.relative_to_sdk(Path(".esp-idf"),
+                                             "components/esp_phy/lib.a"),
+                         "components/esp_phy/lib.a")
+        self.assertEqual(mod.normalize_symbol_sources(
+            Path(".esp-idf"),
+            {"dactrig": {".esp-idf/components/esp_phy/lib.a:mac_common.o"}}),
+            {"dactrig": {"components/esp_phy/lib.a:mac_common.o"}})
         output = ("archive.a:foo.o: file format elf32-littleriscv\n"
                   "Disassembly of section .text.dactrig:\n"
                   "00000000 <dactrig>:\n"
