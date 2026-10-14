@@ -19,7 +19,7 @@ static bool s31_tx_probe_command(const char *line)
     }
     if (strcmp(line, "TXPATH?") == 0) {
         /* Names describe the matching S31 ROM routines, not a playback map.
-         * All seven registers are read-modify-written by those routines.
+         * All eight registers are read-modify-written by those routines.
          * Snapshot only: never call a TX function or change any control bit. */
         uint32_t rate = REG_READ(0x20100448u);  /* phy_dac_rate_set */
         uint32_t clock = REG_READ(0x20100890u); /* phy_set_txclk_en */
@@ -28,11 +28,12 @@ static bool s31_tx_probe_command(const char *line)
         uint32_t tone_b = REG_READ(0x20100420u);
         uint32_t scale = REG_READ(0x20100c04u); /* phy_dac_scale_set */
         uint32_t filter = REG_READ(0x20107440u); /* phy_bbtx_outfilter */
+        uint32_t dc = REG_READ(0x20100c08u); /* phy_fe_reg_update / set_txdc_dig */
         reply("TXPATH 1 passive dac_rate=%08" PRIx32 " tx_clock=%08" PRIx32
               " tone_ctrl=%08" PRIx32 " tone_a=%08" PRIx32
               " tone_b=%08" PRIx32 " dac_scale=%08" PRIx32
-              " tx_filter=%08" PRIx32 "\n", rate, clock, ctrl, tone_a,
-              tone_b, scale, filter);
+              " tx_filter=%08" PRIx32 " tx_dc=%08" PRIx32 "\n",
+              rate, clock, ctrl, tone_a, tone_b, scale, filter, dc);
         return true;
     }
     if (strcmp(line, "TXPROBE?") == 0) {

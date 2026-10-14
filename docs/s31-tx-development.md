@@ -27,7 +27,7 @@ The ordinary S31 burst firmware has these passive diagnostic commands:
 | --- | --- |
 | TXCAPS? | Reports DAC unverified, burst/stream/Soapy TX disabled |
 | TXPROBE? | Passively reads existing RX DUMP_CTRL, DUMP_MODE, DUMP_MAC, RX_GAIN |
-| TXPATH? | Passively reads seven TX-related controls identified in the S31 ROM |
+| TXPATH? | Passively reads eight TX-related controls identified in the S31 ROM |
 | Other TX-prefixed commands | ERR tx_unverified |
 
 The snapshot is **not a DAC test**. It only records known RX PHY state without
@@ -112,7 +112,7 @@ The official package was checked against its SDK SHA-256
 Its S31 rev-0 ELF SHA-256 is
 `a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87`.
 
-`tools/s31_tx_rom_audit.py` resolves ten control routines from the ELF and
+`tools/s31_tx_rom_audit.py` resolves eleven control routines from the ELF and
 checks exported entry trampolines against the SDK's
 [`esp32s31.rom.phy.ld`](https://github.com/espressif/esp-idf/blob/26dd2948925d44f41e3bb614fb044b7a0839a242/components/esp_rom/esp32s31/ld/esp32s31.rom.phy.ld).
 The ELF comes from the official
@@ -131,8 +131,9 @@ execute the TX routines or establish RF playback.
 | `phy_bbtx_outfilter` | `0x2f801480` / `0x2f828576` | RMW `0x20107440`, including bits 4, 5 and 6. Filter response is unmeasured. |
 | `phy_start_tx_tone_step` / `phy_stop_tx_tone` | `0x2f801404` / `0x2f828776`; `0x2f801408` / `0x2f828878` | RMW `0x2010040c`, `0x2010041c`, `0x20100420`; tone control evidence only, no SRAM sample source. |
 | `phy_pbus_xpd_tx_off` / `phy_pbus_xpd_tx_on` | `0x2f801618` / `0x2f824396`; `0x2f80161c` / `0x2f82440e` | ROM implementations identified and byte-matched; the audit does not call either function. |
+| `phy_fe_reg_update` / archive `set_txdc_dig` | ROM body `0x2f8288a8`; archive `librftest.a:phy_test.o` | RMW `0x20100c08`. Archive setter writes argument bits `[9:0]` to register `[9:0]`, and second argument bits `[9:0]` to `[19:10]`; ROM updater sets bits 25/26. These are calibration/injection clues, not an established SRAM source mux. |
 
-`TXPATH?` exposes a snapshot of the seven registers above. It performs only
+`TXPATH?` exposes a snapshot of the eight registers above. It performs only
 32-bit reads from registers whose ROM routines use read-modify-write; it does
 not call those routines, change the DAC rate/clock, grant memory, or start TX.
 `TXCAPS?` adds `pathprobe=1`; all actual TX capabilities remain zero.
@@ -261,7 +262,7 @@ modulation has no automatic compliance exemption, including inside ISM bands.
 | Existing S31 RX | Source preserved apart from read-only probe | 256-sample CAP16 smoke test passed; external RF stimulus not tested |
 | Passive TXCAPS?/TXPROBE? | Implemented; host test included | Passed on S31 rev 0.0; RF reported disabled |
 | Pinned PHY symbol audit | Script and focused disassembly in CI | Both exact-profile artifacts reviewed; no DAC path verified |
-| S31 ROM TX controls | Ten function bodies and entry checks in CI; passive TXPATH? | 13 mask ROM pages matched S31 rev 0.0; playback trigger/source unresolved |
+| S31 ROM TX controls | Eleven function bodies and entry checks in CI; passive TXPATH? | 13 mask ROM pages matched S31 rev 0.0; playback trigger/source unresolved |
 | Offline CS16LE test vectors | Implemented; host test included | Not applicable |
 | RF DAC I/Q burst | Not implemented | Unverified |
 | Gapless dual-bank TX | Not implemented | Unverified |

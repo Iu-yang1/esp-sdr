@@ -20,7 +20,7 @@ FOCUS_SYMBOLS = (
     "phy_dac_rate_set", "phy_set_txclk_en", "phy_dac_scale_set",
     "phy_bbtx_outfilter", "phy_start_tx_tone_step", "phy_stop_tx_tone",
     "phy_pbus_xpd_tx_off", "phy_pbus_xpd_tx_on", "phy_force_txrx_off",
-    "phy_open_fe_bb_clk",
+    "phy_open_fe_bb_clk", "phy_fe_reg_update",
 )
 
 

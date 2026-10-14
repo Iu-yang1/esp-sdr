@@ -23,7 +23,7 @@ FOCUS_SYMBOLS = (
     "dactrig", "fedump_rd_txmem", "fedump_wr_txmem", "phy_tx_tone",
     "phy_start_tx_tone_step_new", "phy_stop_tx_tone_new",
     "phy_set_tx_gain_mem_new", "phy_set_tx_cfr_mem", "rftest_open_clk",
-    "tx_contin_en", "esp_tx_func",
+    "tx_contin_en", "esp_tx_func", "set_txdc_dig",
 )
 
 
